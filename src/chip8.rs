@@ -230,7 +230,7 @@ impl Chip8 {
     }
 
     fn register_sub_rev(&mut self, x: u16, y: u16) -> usize {
-        let sub = self.v[y as usize] - self.v[x as usize];
+        let sub = self.v[y as usize].wrapping_sub(self.v[x as usize]);
         self.v[0xF] = (self.v[y as usize] > self.v[x as usize]) as u8;
         self.v[x as usize] = sub;
         self.pc + 2

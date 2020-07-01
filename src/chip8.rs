@@ -217,8 +217,8 @@ impl Chip8 {
     }
 
     fn register_borrow_sub(&mut self, x: u16, y: u16) -> usize {
-        let sub = (self.v[x as usize] as i8 - self.v[y as usize] as i8).abs();
-        self.v[0xF] = (self.v[x as usize] > self.v[y as usize]) as u8; 
+        let sub = self.v[x as usize].wrapping_sub(self.v[y as usize]);
+        self.v[0xF] = (self.v[x as usize] > self.v[y as usize]) as u8;
         self.v[x as usize] = sub as u8;
         self.pc + 2
     }

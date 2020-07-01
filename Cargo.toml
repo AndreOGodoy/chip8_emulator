@@ -1,5 +1,5 @@
 [package]
-name = "chip-8-emulator"
+name = "chip8_emulator"
 version = "0.1.0"
 authors = ["AndreOGodoy <godoy.andre@hotmail.com>"]
 edition = "2018"
@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 rand = "0.7.3"
+minifb = "0.16"

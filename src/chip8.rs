@@ -1,47 +1,42 @@
 use std::error::Error;
 use std::fs::read;
 use std::path::Path;
-use std::primitive::u8;
 
 use rand::Rng;
 
 const PROGRAM_START: usize = 0x200;
+const WINDOW_SIZE: (usize, usize) = (64, 32);
 
+const FONT_SET: [u8; 80] = [
+    0xF0, 0x90, 0x90, 0x90, 0xF0, 0x20, 0x60, 0x20, 0x20, 0x70, 0xF0, 0x10, 0xF0, 0x80, 0xF0, 0xF0,
+    0x10, 0xF0, 0x10, 0xF0, 0x90, 0x90, 0xF0, 0x10, 0x10, 0xF0, 0x80, 0xF0, 0x10, 0xF0, 0xF0, 0x80,
+    0xF0, 0x90, 0xF0, 0xF0, 0x10, 0x20, 0x40, 0x40, 0xF0, 0x90, 0xF0, 0x90, 0xF0, 0xF0, 0x90, 0xF0,
+    0x10, 0xF0, 0xF0, 0x90, 0xF0, 0x90, 0x90, 0xE0, 0x90, 0xE0, 0x90, 0xE0, 0xF0, 0x80, 0x80, 0x80,
+    0xF0, 0xE0, 0x90, 0x90, 0x90, 0xE0, 0xF0, 0x80, 0xF0, 0x80, 0xF0, 0xF0, 0x80, 0xF0, 0x80, 0x80,
+];
 pub struct Chip8 {
-    //Stores the current 2-byte opcode
     opcode: u16,
 
-    //Emulates the 4K total memory
     memory: [u8; 4096],
 
-    //Emulates the 16 2-byte general purpose registers. VF = v[15] shoud not be used. Its a flag for some instructions
     v: [u8; 16],
 
-    //Index register that can have a value from 0x000 to 0xFFF. Store some memory address
     i: u16,
 
-    //Program counter that can have a value from 0x000 to 0xFFF. Shows where the program currently is
-    pc: u16,
+    pc: usize,
 
-    //0x000-0x1FF - Chip 8 interpreter (contains font set in emu)
-    //0x050-0x0A0 - Used for the built in 4x5 pixel font set (0-F)
-    //0x200-0xFFF - Program ROM and work RAM
+    pub display: [u8; WINDOW_SIZE.0 * WINDOW_SIZE.1],
 
-    //Black and white screen of 64 x 32 = 2048 pixels
-    gfx: [u8; 64 * 32],
-
-    //Special registers that decrementes by one at a rate of 60Hz when above 0
     delay_timer: u8,
     sound_timer: u8,
 
-    //Stack to help jumping to subroutines. Not originally specificated
     stack: [u16; 16],
 
-    //Holds a position on the stack
-    stack_pointer: u16,
+    stack_pointer: usize,
 
-    //Keypad. Each position of the array holds one key's state
     key: [u8; 16],
+
+    pub draw_flag: bool,
 }
 
 impl Chip8 {
@@ -51,7 +46,7 @@ impl Chip8 {
 
     pub fn default() -> Self {
         Chip8 {
-            pc: PROGRAM_START as u16,
+            pc: PROGRAM_START,
             opcode: 0,
             i: 0,
             stack: [0; 16],
@@ -59,9 +54,10 @@ impl Chip8 {
             memory: [0; 4096],
             delay_timer: 0,
             sound_timer: 0,
-            gfx: [0; 64 * 32],
+            display: [0; 64 * 32],
             key: [0; 16],
             v: [0; 16],
+            draw_flag: false,
         }
     }
 
@@ -69,285 +65,74 @@ impl Chip8 {
         let program_as_binary = read(path)?;
         self.memory[PROGRAM_START..program_as_binary.len() + PROGRAM_START]
             .clone_from_slice(&program_as_binary[..]);
+
+        self.memory[0x50..0x50 + 80].clone_from_slice(&FONT_SET[..]);
+
         Ok(())
     }
 
     pub fn emulate_cycle(&mut self) {
         self.opcode = self.fetch_opcode();
 
+        let nibbles = (
+            self.opcode & 0xF000,
+            self.opcode & 0x0F00,
+            self.opcode & 0x00F0,
+            self.opcode & 0x000F,
+        );
+
+        let f = nibbles.0 >> 12;
+        let x = nibbles.1 >> 8;
+        let y = nibbles.2 >> 4;
+        let n = nibbles.3;
+        let kk = self.opcode & 0x00FF;
+        let nnn = self.opcode & 0x0FFF;
+
         println!("Opcode is: {:#0x}", self.opcode);
 
-        match self.opcode & 0xF000 {
-            //Search for the first 4 bis
-            0x0000 => match self.opcode & 0x00FF {
-                0x00E0 => {
-                    self.gfx.iter_mut().for_each(|a| *a = 0);
-                    self.increment_program_counter();
-                }
-                0x00EE => {
-                    self.pc = self.stack[self.stack_pointer as usize];
-                    self.stack_pointer -= 1;
-                }
-                _ => println!("Unknown Opcode: {}", self.opcode),
-            },
-
-            0xA000 => {
-                self.i = self.opcode & 0x0FFF;
-                self.increment_program_counter()
+        self.pc = match (f, x, y, n) {
+            (0x0, _, _, 0x0) => self.clear_screen(),
+            (0x0, _, _, 0xE) => self.return_from_subroutine(),
+            (0x1, _, _, _) => self.jump_to_address(nnn),
+            (0x2, _, _, _) => self.call_address(nnn),
+            (0x3, _, _, _) => self.skip_if_equal(self.v[x as usize].into(), kk),
+            (0x4, _, _, _) => self.skip_if_diff(self.v[x as usize].into(), kk),
+            (0x5, _, _, _) => {
+                self.skip_if_equal(self.v[x as usize].into(), self.v[y as usize].into())
             }
-
-            0xB000 => {
-                self.pc = (self.opcode & 0x0FFF) + self.v[0x000 as u8 as usize] as u16;
+            (0x6, _, _, _) => self.insert_on_register(x, kk),
+            (0x7, _, _, _) => self.add_to_register(x, kk),
+            (0x8, _, _, 0x0) => self.insert_on_register(x, self.v[y as usize].into()),
+            (0x8, _, _, 0x1) => self.register_or(x, y),
+            (0x8, _, _, 0x2) => self.register_and(x, y),
+            (0x8, _, _, 0x3) => self.register_xor(x, y),
+            (0x8, _, _, 0x4) => self.register_carry_add(x, y),
+            (0x8, _, _, 0x5) => self.register_borrow_sub(x, y),
+            (0x8, _, _, 0x6) => self.register_shr_1(x),
+            (0x8, _, _, 0x7) => self.register_sub_rev(x, y),
+            (0x8, _, _, 0xE) => self.register_shl_1(x),
+            (0x9, _, _, 0x0) => {
+                self.skip_if_diff(self.v[x as usize] as u16, self.v[y as usize] as u16)
             }
-
-            0xC000 => {
-                let mut rng = rand::thread_rng();
-                let random: u8 = rng.gen_range(0, 255);
-                self.v[(self.opcode & 0x0F00) as usize] = random & (self.opcode & 0x00FF) as u8;
-                self.increment_program_counter();
+            (0xA, _, _, _) => self.insert_on_register(self.i, nnn),
+            (0xB, _, _, _) => self.jump_to_address(nnn + self.v[0x000] as u16),
+            (0xC, _, _, _) => self.register_random_end(x, kk),
+            (0xD, _, _, _) => self.draw_sprite(x, y, n),
+            (0xE, _, _, 0xE) => self.skip_if_key_pressed(x),
+            (0xE, _, _, 0x1) => self.skip_if_key_not_pressed(x),
+            (0xF, _, 0x0, 0x7) => self.insert_on_register(x, self.delay_timer as u16),
+            (0xF, _, 0x0, 0xA) => self.wait_for_key_press(x),
+            (0xF, _, 0x1, 0x5) => self.set_delay_timer(x),
+            (0xF, _, 0x1, 0x8) => self.set_sound_timer(x),
+            (0xF, _, 0x1, 0xE) => self.index_add(x),
+            (0xF, _, 0x2, 0x9) => self.set_index_sprite_location(x),
+            (0xF, _, 0x3, 0x3) => self.memory_store_bcd(x),
+            (0xF, _, 0x5, 0x5) => self.read_registers(x),
+            (0xF, _, 0x6, 0x5) => self.store_registers(x),
+            _ => {
+                println!("Unknown opcode: {:#0x}", self.opcode);
+                self.pc
             }
-
-            0xD000 => {
-                self.v[0xF] = 0;
-                let y = self.v[((self.opcode & 0x00F0) >> 4) as usize] as usize;
-                for byte in 0..(self.opcode & 0x000F) as usize {
-                    let pixel = self.memory[self.i as usize + byte];
-                    for bit in 0..8 as usize {
-                        let x = self.v[(self.opcode & 0x0F00 >> 8) as usize] as usize;
-                        self.v[0xF] = self.gfx[(x + bit + (y + byte) * 64) as usize] & 1;
-                        self.gfx[(x + bit + (y + byte) * 64) as usize] ^= 1;
-                    }
-                }
-                self.increment_program_counter();
-            }
-
-            0xE000 => match self.opcode & 0x00FF {
-                0x009E => {
-                    let x = self.opcode & 0x0F00;
-                    if self.key[self.v[x as usize] as usize] == 0xFF {
-                        self.skip_next_instruction();
-                    } else {
-                        self.increment_program_counter();
-                    }
-                }
-                0x00A1 => {
-                    let x = self.opcode & 0x0F00;
-                    if self.key[self.v[x as usize] as usize] == 0x00 {
-                        self.skip_next_instruction();
-                    } else {
-                        self.increment_program_counter();
-                    }
-                }
-                _ => println!("Unknown opcode: {}", self.opcode)
-            },
-
-            0xF000 => match self.opcode & 0x00FF {
-                0x0007 => {
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] = self.delay_timer;
-                    self.increment_program_counter();
-                }
-                0x000A => {
-                    unimplemented!();
-                }
-                0x0015 => {
-                    self.delay_timer = self.v[(self.opcode & 0x0F00) as u8 as usize];
-                    self.increment_program_counter();
-                }
-                0x0018 => {
-                    self.sound_timer = self.v[(self.opcode & 0x0F00) as u8 as usize];
-                    self.increment_program_counter();
-                }
-                0x001E => {
-                    self.i += self.v[(self.opcode & 0x0F00) as u8 as usize] as u16;
-                    self.increment_program_counter();
-                }
-                0x0029 => {
-                    self.i = (self.v[((self.opcode & 0x0F00) >> 8 ) as usize] * 5) as u16;
-                    self.increment_program_counter();
-                }
-                0x0033 => {
-                    let x = self.opcode & 0x0F00;
-                    self.memory[self.i as usize] = (x/ 100) as u8;
-                    self.memory[self.i as usize + 1] = ((x % 100) / 10) as u8;
-                    self.memory[self.i as usize + 2] = (x % 10) as u8;
-                    self.increment_program_counter();
-                }
-                0x0055 => {
-                    let x = (self.opcode & 0x0F00) as usize;
-                    self.memory[self.i as usize..].clone_from_slice(&self.v[0x0000 as usize..x]);
-                    self.increment_program_counter();
-                }
-                0x0065 => {
-                    let x = (self.opcode & 0x0F00 >> 8) as usize;
-                    for iter in 0..x as usize {
-                        self.v[iter] = self.memory[self.i as usize + x];
-                    }
-                    self.increment_program_counter();
-                }
-                _ => println!("Unknown opcode: {}", self.opcode),
-            },
-
-            0x1000 => {
-                self.pc = self.opcode & 0x0FFF;
-            }
-
-            0x2000 => {
-                self.stack[self.stack_pointer as usize] = self.pc;
-                self.stack_pointer += 1;
-                self.pc = self.opcode & 0x0FFF;
-            }
-
-            0x3000 => {
-                if self.v[((self.opcode & 0x0F00) as u8) as usize] == (self.opcode & 0x00FF) as u8 {
-                    self.skip_next_instruction();
-                } else {
-                    self.increment_program_counter();
-                }
-            }
-
-            0x4000 => {
-                if self.v[((self.opcode & 0x0F00) as u8) as usize] != (self.opcode & 0x00FF) as u8 {
-                    self.skip_next_instruction();
-                } else {
-                    self.increment_program_counter();
-                }
-            }
-
-            0x5000 => {
-                if self.v[((self.opcode & 0x0F00) as u8) as usize]
-                    == self.v[((self.opcode & 0x00F0) as u8) as usize]
-                {
-                    self.skip_next_instruction();
-                } else {
-                    self.increment_program_counter();
-                }
-            }
-
-            0x6000 => {
-                self.v[((self.opcode & 0x0F00) as u8) as usize] = (self.opcode & 0x00FF) as u8;
-                self.increment_program_counter();
-            }
-
-            0x7000 => {
-                let x = ((self.opcode & 0x0F00) as u8) as usize;
-                self.v[x] += (self.opcode & 0x00FF) as u8;
-                self.increment_program_counter();
-            }
-
-            0x8000 => match self.opcode & 0x000F {
-                0x0000 => {
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] =
-                        self.v[(self.opcode & 0x00F0) as u8 as usize];
-                    self.increment_program_counter();
-                }
-
-                0x0001 => {
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] |=
-                        self.v[(self.opcode & 0x00F0) as u8 as usize];
-                    self.increment_program_counter();
-                }
-
-                0x0002 => {
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] &=
-                        self.v[(self.opcode & 0x00F0) as u8 as usize];
-                    self.increment_program_counter();
-                }
-
-                0x0003 => {
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] ^=
-                        self.v[(self.opcode & 0x00F0) as u8 as usize];
-                    self.increment_program_counter();
-                }
-
-                0x0004 => {
-                    let sum = (self.v[(self.opcode & 0x0F00) as u8 as usize]
-                        + self.v[(self.opcode & 0x00F0) as u8 as usize])
-                        as u16;
-                    if sum > 0x00FF {
-                        self.v[0xF] = 1;
-                    } else {
-                        self.v[0xF] = 0;
-                    }
-
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] = sum as u8;
-                    self.increment_program_counter();
-                }
-
-                0x0005 => {
-                    let sub = self.v[(self.opcode & 0x0F00) as u8 as usize]
-                        - self.v[(self.opcode & 0x00F0) as u8 as usize];
-                    if self.v[(self.opcode & 0x0F00) as u8 as usize]
-                        > self.v[(self.opcode & 0x00F0) as u8 as usize]
-                    {
-                        self.v[0xF] = 1;
-                    } else {
-                        self.v[0xF] = 0;
-                    }
-
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] = sub as u8;
-                    self.increment_program_counter();
-                }
-
-                0x0006 => {
-                    let shr = self.v[(self.opcode & 0x0F00) as u8 as usize] >> 1;
-
-                    if self.v[(self.opcode & 0x0F00) as u8 as usize] & 0x000F != 0x0000 {
-                        self.v[0xF] = 1;
-                    } else {
-                        self.v[0xF] = 0
-                    }
-
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] = shr;
-                    self.increment_program_counter();
-                }
-
-                0x0007 => {
-                    let sub = self.v[(self.opcode & 0x00F0) as u8 as usize]
-                        - self.v[(self.opcode & 0x0F00) as u8 as usize];
-
-                    if self.v[(self.opcode & 0x00F0) as u8 as usize]
-                        > self.v[(self.opcode & 0x0F00) as u8 as usize]
-                    {
-                        self.v[0xF] = 1;
-                    } else {
-                        self.v[0xF] = 0
-                    }
-
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] = sub;
-                    self.increment_program_counter();
-                }
-
-                0x000E => {
-                    let shl = self.v[(self.opcode & 0x0F00) as u8 as usize] << 1;
-
-                    if self.v[(self.opcode & 0x0F00) as u8 as usize] as u16 & 0xF000 != 0x0000 {
-                        self.v[0xF] = 1;
-                    } else {
-                        self.v[0xF] = 0
-                    }
-
-                    self.v[(self.opcode & 0x0F00) as u8 as usize] = shl;
-                    self.increment_program_counter();
-                }
-
-                _ => unimplemented!(),
-            },
-
-            0x9000 => {
-                if self.v[(self.opcode & 0x0F00) as u8 as usize]
-                    != self.v[(self.opcode & 0x00F0) as u8 as usize]
-                {
-                    self.skip_next_instruction();
-                } else {
-                    self.increment_program_counter();
-                }
-            }
-
-            0xD000 => self.increment_program_counter(),
-
-            0xF000 => self.increment_program_counter(),
-
-            _ => println!("Unknown opcode: {}", self.opcode),
         };
 
         match (self.delay_timer, self.sound_timer) {
@@ -362,15 +147,347 @@ impl Chip8 {
         }
     }
 
-    fn increment_program_counter(&mut self) {
-        self.pc += 2;
+    fn clear_screen(&mut self) -> usize {
+        self.display.iter_mut().for_each(|byte| *byte = 0);
+        self.draw_flag = true;
+        self.pc + 2
     }
 
-    fn skip_next_instruction(&mut self) {
-        self.pc += 4;
+    fn return_from_subroutine(&mut self) -> usize {
+        self.stack_pointer -= 1;
+        self.stack[self.stack_pointer].into()
+    }
+
+    fn jump_to_address(&mut self, address: u16) -> usize {
+        address.into()
+    }
+
+    fn call_address(&mut self, address: u16) -> usize {
+        self.stack[self.stack_pointer] = self.pc as u16;
+        self.stack_pointer += 1;
+        address.into()
+    }
+
+    fn skip_if_equal(&mut self, a: u16, b: u16) -> usize {
+        if a == b {
+            self.pc + 4
+        } else {
+            self.pc + 2
+        }
+    }
+
+    fn skip_if_diff(&mut self, a: u16, b: u16) -> usize {
+        if a != b {
+            self.pc + 4
+        } else {
+            self.pc + 2
+        }
+    }
+
+    fn insert_on_register(&mut self, x: u16, kk: u16) -> usize {
+        self.v[x as usize] = kk as u8;
+        self.pc + 2
+    }
+
+    fn add_to_register(&mut self, x: u16, kk: u16) -> usize {
+        self.v[x as usize] = (self.v[x as usize] as u16 + kk as u16) as u8;
+        self.pc + 2
+    }
+
+    fn register_or(&mut self, x: u16, y: u16) -> usize {
+        self.v[x as usize] |= self.v[y as usize];
+        self.pc + 2
+    }
+
+    fn register_and(&mut self, x: u16, y: u16) -> usize {
+        self.v[x as usize] &= self.v[y as usize];
+        self.pc + 2
+    }
+
+    fn register_xor(&mut self, x: u16, y: u16) -> usize {
+        self.v[x as usize] ^= self.v[y as usize];
+        self.pc + 2
+    }
+
+    fn register_carry_add(&mut self, x: u16, y: u16) -> usize {
+        let sum = self.v[x as usize] as u16 + self.v[y as usize] as u16;
+        self.v[0xF] = (sum > 0xFF) as u8;
+        self.v[x as usize] = (sum & 0x00FF) as u8;
+        self.pc + 2
+    }
+
+    fn register_borrow_sub(&mut self, x: u16, y: u16) -> usize {
+        let sub = self.v[x as usize] + self.v[y as usize];
+        self.v[0xF] = (self.v[x as usize] > self.v[y as usize]) as u8;
+        self.v[x as usize] = sub;
+        self.pc + 2
+    }
+
+    fn register_shr_1(&mut self, x: u16) -> usize {
+        self.v[0xF] = self.v[x as usize] & 0x000F;
+        self.v[x as usize] >>= 1;
+        self.pc + 2
+    }
+
+    fn register_sub_rev(&mut self, x: u16, y: u16) -> usize {
+        let sub = self.v[y as usize] - self.v[x as usize];
+        self.v[0xF] = (self.v[y as usize] > self.v[x as usize]) as u8;
+        self.v[x as usize] = sub;
+        self.pc + 2
+    }
+
+    fn register_shl_1(&mut self, x: u16) -> usize {
+        self.v[0xF] = (self.v[x as usize] >> 7) as u8;
+        self.v[x as usize] <<= 1;
+        self.pc + 2
+    }
+
+    fn register_random_end(&mut self, x: u16, kk: u16) -> usize {
+        let mut rng = rand::thread_rng();
+        self.v[x as usize] = (rng.gen_range(0, 255) & kk) as u8;
+        self.pc + 2
+    }
+
+    fn draw_sprite(&mut self, x: u16, y: u16, n: u16) -> usize {
+        self.v[0xF] = 0;
+        for byte in 0..n as usize {
+            let pos = self.memory[self.i as usize + byte];
+            for bit in 0..8 as usize {
+                if pos & (0x80 >> bit) != 0x0 {
+                    let pixel = (self.v[x as usize] as u16
+                        + bit as u16
+                        + (self.v[y as usize] as u16 + byte as u16)
+                        << 6)
+                        % 2028;
+                    self.v[0xF] |= self.display[pixel as usize] & 1;
+                    self.display[pixel as usize] ^= self.display[pixel as usize];
+                }
+            }
+        }
+        self.draw_flag = true;
+        self.pc + 2
+    }
+
+    fn skip_if_key_pressed(&mut self, x: u16) -> usize {
+        if self.key[self.v[x as usize] as usize] == 1 {
+            self.pc + 4
+        } else {
+            self.pc + 2
+        }
+    }
+
+    fn skip_if_key_not_pressed(&mut self, x: u16) -> usize {
+        if self.key[self.v[x as usize] as usize] == 0 {
+            self.pc + 4
+        } else {
+            self.pc + 2
+        }
+    }
+
+    fn wait_for_key_press(&mut self, x: u16) -> usize {
+        if let Some(&key_state) = self.key.iter().find(|&&key| key == 1) {
+            self.v[x as usize] = key_state;
+            self.pc + 2
+        } else {
+            self.pc
+        }
+    }
+
+    fn set_delay_timer(&mut self, x: u16) -> usize {
+        self.delay_timer = self.v[x as usize];
+        self.pc + 2
+    }
+
+    fn set_sound_timer(&mut self, x: u16) -> usize {
+        self.sound_timer = self.v[x as usize];
+        self.pc + 2
+    }
+
+    fn index_add(&mut self, x: u16) -> usize {
+        self.i += self.v[x as usize] as u16;
+        self.pc + 2
+    }
+
+    fn set_index_sprite_location(&mut self, x: u16) -> usize {
+        self.i = self.v[x as usize] as u16 * 5;
+        self.pc + 2
+    }
+
+    fn memory_store_bcd(&mut self, x: u16) -> usize {
+        self.memory[self.i as usize] = (x / 100) as u8;
+        self.memory[self.i as usize + 1] = (x / 10) as u8 % 10;
+        self.memory[self.i as usize + 2] = x as u8 % 10;
+        self.pc + 2
+    }
+
+    fn read_registers(&mut self, x: u16) -> usize {
+        for index in 0..=x as usize {
+            self.v[index] = self.memory[self.i as usize + index];
+        }
+        self.pc + 2
+    }
+
+    fn store_registers(&mut self, x: u16) -> usize {
+        for index in 0..=x as usize {
+            self.memory[self.i as usize + index] = self.v[index];
+        }
+        self.pc + 2
     }
 
     fn fetch_opcode(&mut self) -> u16 {
         (self.memory[self.pc as usize] as u16) << 8 | self.memory[self.pc as usize + 1] as u16
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chip8_default_init() {
+        let chip8_debug = Chip8::new();
+
+        assert_eq!(chip8_debug.pc, 0x200);
+
+        assert_eq!(chip8_debug.stack_pointer, 0);
+        assert_eq!(chip8_debug.sound_timer, 0);
+        assert_eq!(chip8_debug.delay_timer, 0);
+        assert_eq!(chip8_debug.i, 0);
+        assert_eq!(chip8_debug.opcode, 0);
+        assert_eq!(chip8_debug.draw_flag, false);
+
+        assert!(chip8_debug.memory.iter().all(|&byte| byte == 0));
+        assert!(chip8_debug.display.iter().all(|&byte| byte == 0));
+        assert!(chip8_debug.key.iter().all(|&byte| byte == 0));
+        assert!(chip8_debug.v.iter().all(|&byte| byte == 0));
+        assert!(chip8_debug.stack.iter().all(|&byte| byte == 0));
+    }
+
+    #[test]
+    fn test_load_program_err() {
+        let mut chip8_debug = Chip8::new();
+        assert!(chip8_debug.load_program("path/do/not/exist").is_err());
+    }
+
+    #[test]
+    fn test_load_program_ok() {
+        let mut chip8_debug = Chip8::new();
+        let result = chip8_debug.load_program("roms/pong.rom");
+
+        assert!(result.is_ok());
+
+        let program_as_bytes = read("roms/pong.rom").unwrap();
+        let slice_as_vec = chip8_debug.memory[0x200..0x200+program_as_bytes.len()].to_vec();
+
+        assert_eq!(program_as_bytes, slice_as_vec);
+
+        let fontset = vec![
+            0xF0, 0x90, 0x90, 0x90, 0xF0, 0x20, 0x60, 0x20, 0x20, 0x70, 0xF0, 0x10, 0xF0, 0x80,
+            0xF0, 0xF0, 0x10, 0xF0, 0x10, 0xF0, 0x90, 0x90, 0xF0, 0x10, 0x10, 0xF0, 0x80, 0xF0,
+            0x10, 0xF0, 0xF0, 0x80, 0xF0, 0x90, 0xF0, 0xF0, 0x10, 0x20, 0x40, 0x40, 0xF0, 0x90,
+            0xF0, 0x90, 0xF0, 0xF0, 0x90, 0xF0, 0x10, 0xF0, 0xF0, 0x90, 0xF0, 0x90, 0x90, 0xE0,
+            0x90, 0xE0, 0x90, 0xE0, 0xF0, 0x80, 0x80, 0x80, 0xF0, 0xE0, 0x90, 0x90, 0x90, 0xE0,
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, 0xF0, 0x80, 0xF0, 0x80, 0x80,
+        ];
+        let slice_as_vec = chip8_debug.memory[0x50..0x50+80].to_vec();
+
+        assert_eq!(fontset, slice_as_vec);
+    }
+
+    #[test]
+    fn test_emulate_cycle() {
+        let mut chip8_debug = Chip8::new();
+        chip8_debug.load_program("roms/pong.rom").unwrap();
+        
+        let mut old_pc = chip8_debug.pc;
+        
+        chip8_debug.emulate_cycle();
+        assert_eq!(chip8_debug.opcode, 0x6A02);
+        assert_eq!(chip8_debug.pc, old_pc + 2);
+        
+        
+        old_pc = chip8_debug.pc;
+        chip8_debug.emulate_cycle();
+        assert_eq!(chip8_debug.opcode, 0x6B0C);
+        assert_eq!(chip8_debug.pc, old_pc + 2);
+    }
+
+    #[test]
+    fn test_clear_screen() {
+        let mut chip8_debug = Chip8::new();
+    
+        chip8_debug.display.iter_mut().step_by(4).for_each(|byte| *byte += 2);
+        assert!(!chip8_debug.display.iter().all(|&byte| byte == 0));
+
+        chip8_debug.clear_screen();
+        assert!(chip8_debug.display.iter().all(|&byte| byte == 0));        
+    }
+
+    #[test]
+    fn test_jump_to_address() {
+        let mut chip8_debug = Chip8::new();
+
+        let new_address = 0xFFF;
+        chip8_debug.pc = chip8_debug.jump_to_address(0xFFF);
+        assert_eq!(chip8_debug.pc, new_address);
+        
+        let new_address = 0x0000;
+        chip8_debug.pc = chip8_debug.jump_to_address(0x0000);
+        assert_eq!(chip8_debug.pc, new_address);
+    }
+
+    #[test]
+    fn test_call_and_return_from_subroutine() {
+        let mut chip8_debug = Chip8::new();
+
+        let old_sp = chip8_debug.stack_pointer;
+        let old_pc = chip8_debug.pc;
+
+        assert_eq!(chip8_debug.call_address(0xABC), 0xABC);
+        assert_eq!(chip8_debug.stack_pointer, old_sp + 1);
+        
+        let old_sp = chip8_debug.stack_pointer;
+
+        assert_eq!(chip8_debug.return_from_subroutine(), old_pc);
+        assert_eq!(chip8_debug.stack_pointer, old_sp - 1);
+    }
+
+    #[test]
+    fn test_skip_if_equal_and_different() {
+        let mut chip8_debug = Chip8::new();
+
+        chip8_debug.pc = chip8_debug.jump_to_address(0x200 + 0xabc);
+        
+        let old_pc = chip8_debug.pc;
+        chip8_debug.pc = chip8_debug.skip_if_equal(0x300, 0x300);
+        assert_eq!(chip8_debug.pc, old_pc + 4);
+        
+        let old_pc = chip8_debug.pc;
+        chip8_debug.pc = chip8_debug.skip_if_equal(0x300, 0x200);
+        assert_eq!(chip8_debug.pc, old_pc + 2);
+        
+        let old_pc = chip8_debug.pc;
+        chip8_debug.pc = chip8_debug.skip_if_diff(0x300, 0x200);
+        assert_eq!(chip8_debug.pc, old_pc + 4);
+        
+        let old_pc = chip8_debug.pc;
+        chip8_debug.pc = chip8_debug.skip_if_diff(0x300, 0x300);
+        assert_eq!(chip8_debug.pc, old_pc + 2);
+    }
+
+    #[test]
+    fn test_register_insert_add_operations() {
+        let mut chip8_debug = Chip8::new();
+
+        chip8_debug.insert_on_register(0x05, 0x00FF);
+        assert_eq!(chip8_debug.v[5], 255);
+
+        chip8_debug.add_to_register(0x04, 0x00FA);
+        assert_eq!(chip8_debug.v[4], 0x00FA);
+
+        chip8_debug.add_to_register(0x04, 0x0001);
+        assert_eq!(chip8_debug.v[4], 0x00FB);
+
+        chip8_debug.insert_on_register(0x0000, 0x0001); 
     }
 }

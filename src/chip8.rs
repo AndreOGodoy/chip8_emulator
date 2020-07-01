@@ -377,7 +377,7 @@ mod tests {
         assert!(result.is_ok());
 
         let program_as_bytes = read("roms/pong.rom").unwrap();
-        let slice_as_vec = chip8_debug.memory[0x200..0x200+program_as_bytes.len()].to_vec();
+        let slice_as_vec = chip8_debug.memory[0x200..0x200 + program_as_bytes.len()].to_vec();
 
         assert_eq!(program_as_bytes, slice_as_vec);
 
@@ -389,7 +389,7 @@ mod tests {
             0x90, 0xE0, 0x90, 0xE0, 0xF0, 0x80, 0x80, 0x80, 0xF0, 0xE0, 0x90, 0x90, 0x90, 0xE0,
             0xF0, 0x80, 0xF0, 0x80, 0xF0, 0xF0, 0x80, 0xF0, 0x80, 0x80,
         ];
-        let slice_as_vec = chip8_debug.memory[0x50..0x50+80].to_vec();
+        let slice_as_vec = chip8_debug.memory[0x50..0x50 + 80].to_vec();
 
         assert_eq!(fontset, slice_as_vec);
     }
@@ -398,14 +398,13 @@ mod tests {
     fn test_emulate_cycle() {
         let mut chip8_debug = Chip8::new();
         chip8_debug.load_program("roms/pong.rom").unwrap();
-        
+
         let mut old_pc = chip8_debug.pc;
-        
+
         chip8_debug.emulate_cycle();
         assert_eq!(chip8_debug.opcode, 0x6A02);
         assert_eq!(chip8_debug.pc, old_pc + 2);
-        
-        
+
         old_pc = chip8_debug.pc;
         chip8_debug.emulate_cycle();
         assert_eq!(chip8_debug.opcode, 0x6B0C);
@@ -415,12 +414,16 @@ mod tests {
     #[test]
     fn test_clear_screen() {
         let mut chip8_debug = Chip8::new();
-    
-        chip8_debug.display.iter_mut().step_by(4).for_each(|byte| *byte += 2);
+
+        chip8_debug
+            .display
+            .iter_mut()
+            .step_by(4)
+            .for_each(|byte| *byte += 2);
         assert!(!chip8_debug.display.iter().all(|&byte| byte == 0));
 
         chip8_debug.clear_screen();
-        assert!(chip8_debug.display.iter().all(|&byte| byte == 0));        
+        assert!(chip8_debug.display.iter().all(|&byte| byte == 0));
     }
 
     #[test]
@@ -430,7 +433,7 @@ mod tests {
         let new_address = 0xFFF;
         chip8_debug.pc = chip8_debug.jump_to_address(0xFFF);
         assert_eq!(chip8_debug.pc, new_address);
-        
+
         let new_address = 0x0000;
         chip8_debug.pc = chip8_debug.jump_to_address(0x0000);
         assert_eq!(chip8_debug.pc, new_address);
@@ -445,7 +448,7 @@ mod tests {
 
         assert_eq!(chip8_debug.call_address(0xABC), 0xABC);
         assert_eq!(chip8_debug.stack_pointer, old_sp + 1);
-        
+
         let old_sp = chip8_debug.stack_pointer;
 
         assert_eq!(chip8_debug.return_from_subroutine(), old_pc);
@@ -457,19 +460,19 @@ mod tests {
         let mut chip8_debug = Chip8::new();
 
         chip8_debug.pc = chip8_debug.jump_to_address(0x200 + 0xabc);
-        
+
         let old_pc = chip8_debug.pc;
         chip8_debug.pc = chip8_debug.skip_if_equal(0x300, 0x300);
         assert_eq!(chip8_debug.pc, old_pc + 4);
-        
+
         let old_pc = chip8_debug.pc;
         chip8_debug.pc = chip8_debug.skip_if_equal(0x300, 0x200);
         assert_eq!(chip8_debug.pc, old_pc + 2);
-        
+
         let old_pc = chip8_debug.pc;
         chip8_debug.pc = chip8_debug.skip_if_diff(0x300, 0x200);
         assert_eq!(chip8_debug.pc, old_pc + 4);
-        
+
         let old_pc = chip8_debug.pc;
         chip8_debug.pc = chip8_debug.skip_if_diff(0x300, 0x300);
         assert_eq!(chip8_debug.pc, old_pc + 2);
@@ -480,7 +483,7 @@ mod tests {
         let mut chip8_debug = Chip8::new();
 
         chip8_debug.insert_on_register(0x05, 0x00FF);
-        assert_eq!(chip8_debug.v[5], 255);
+        assert_eq!(chip8_debug.v[5], 0x00FF);
 
         chip8_debug.add_to_register(0x04, 0x00FA);
         assert_eq!(chip8_debug.v[4], 0x00FA);
@@ -488,6 +491,82 @@ mod tests {
         chip8_debug.add_to_register(0x04, 0x0001);
         assert_eq!(chip8_debug.v[4], 0x00FB);
 
-        chip8_debug.insert_on_register(0x0000, 0x0001); 
+        chip8_debug.insert_on_register(0x0000, 0x0001);
+    }
+
+    #[test]
+    fn test_register_logic_and_bitwise_operations() {
+        let mut chip8_debug = Chip8::new();
+
+        chip8_debug.v[0x0000] = 0x0001;
+        chip8_debug.v[0x0001] = 0x0011;
+        chip8_debug.v[0x0002] = 0x00FF;
+        chip8_debug.v[0x0003] = 0x00AB;
+
+        chip8_debug.register_and(0x0000, 0x0001);
+        assert_eq!(chip8_debug.v[0x0000], 0x0001);
+
+        chip8_debug.register_and(0x0003, 0x0002);
+        assert_eq!(chip8_debug.v[0x0003], 0x00AB);
+
+        chip8_debug.register_or(0x0000, 0x0001);
+        assert_eq!(chip8_debug.v[0x0000], 0x0011);
+
+        chip8_debug.register_or(0x0003, 0x0002);
+        assert_eq!(chip8_debug.v[0x0003], 0x00FF);
+
+        chip8_debug.v[0x0004] = 0x0054;
+
+        chip8_debug.register_shl_1(0x0004);
+        assert_eq!(chip8_debug.v[0x0004], 0x00A8);
+        assert_eq!(chip8_debug.v[0x000F], 0x0000);
+
+        chip8_debug.v[0x0004] = 0x0054;
+
+        chip8_debug.register_shr_1(0x0004);
+        assert_eq!(chip8_debug.v[0x0004], 0x002A);
+        assert_eq!(chip8_debug.v[0x000F], 0x0000);
+
+        chip8_debug.v[0x0004] = 0x0054;
+        chip8_debug.v[0x0005] = 0x00FC;
+        chip8_debug.register_xor(0x0004, 0x0005);
+        assert_eq!(chip8_debug.v[0x0004], 0x00A8);
+
+        chip8_debug.register_random_end(0x0001, 0x007B);
+        chip8_debug.register_random_end(0x0002, 0x007B);
+
+        assert_ne!(chip8_debug.v[0x0001], chip8_debug.v[0x0002]);
+    }
+
+    #[test]
+    fn register_add_sub_operations() {
+        let mut chip8_debug = Chip8::new();
+
+        chip8_debug.v[0x0004] = 0x00FF;
+        chip8_debug.v[0x0005] = 0x00AB;
+
+        assert_eq!(chip8_debug.v[0x000F], 0x0000);
+        chip8_debug.register_carry_add(0x0004, 0x0005);
+        assert_eq!(chip8_debug.v[0x0004], 0x00AA);
+        assert_eq!(chip8_debug.v[0x000F], 0x0001);
+
+        chip8_debug.v[0x0005] = 0x00C2;
+        chip8_debug.v[0x0004] = 0x003E;
+
+        chip8_debug.register_sub_rev(0x0004, 0x0005);
+        assert_eq!(chip8_debug.v[0x0004], 0x0084);
+
+        chip8_debug.v[0x0001] = 0x00BA;
+        chip8_debug.v[0x0002] = 0x00AB;
+        chip8_debug.register_borrow_sub(0x0001, 0x0002);
+        assert_eq!(chip8_debug.v[0x0001], 0x000F);
+        assert_eq!(chip8_debug.v[0x000F], 1);
+
+        chip8_debug.v[0x0003] = 0x00C5;
+        chip8_debug.v[0x0004] = 0x00DF;
+
+        chip8_debug.register_borrow_sub(0x0003, 0x0004);
+        assert_eq!(chip8_debug.v[0x0003], 0x00E6);
+        assert_eq!(chip8_debug.v[0x000F], 0);
     }
 }

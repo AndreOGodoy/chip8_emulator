@@ -224,7 +224,7 @@ impl Chip8 {
     }
 
     fn register_shr_1(&mut self, x: u16) -> usize {
-        self.v[0xF] = self.v[x as usize] & 0x000F;
+        self.v[0xF] = self.v[x as usize] & 0x0001;
         self.v[x as usize] >>= 1;
         self.pc + 2
     }
@@ -237,7 +237,7 @@ impl Chip8 {
     }
 
     fn register_shl_1(&mut self, x: u16) -> usize {
-        self.v[0xF] = (self.v[x as usize] >> 7) as u8;
+        self.v[0xF] = self.v[x as usize] & 0x80; // Same as 0b10000000
         self.v[x as usize] <<= 1;
         self.pc + 2
     }

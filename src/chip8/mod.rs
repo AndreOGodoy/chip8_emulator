@@ -72,8 +72,6 @@ impl Chip8 {
     }
 
     pub fn emulate_cycle(&mut self) {
-        self.draw_flag = false;
-
         self.opcode = self.fetch_opcode();
 
         let nibbles = (
@@ -674,13 +672,4 @@ mod tests {
         assert_eq!(chip8_debug.memory[chip8_debug.i as usize + 1], 5);
         assert_eq!(chip8_debug.memory[chip8_debug.i as usize + 2], 5);
     }
-
-    //#[test] {
-    //    fn test_draw() {
-    //        let mut chip8_debug = Chip8::new();
-//
-    //        chip8_debug.jump_to_address(0x0200);
-    //        chip8_debug.i
-    //    }
-    //}
 }

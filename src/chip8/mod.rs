@@ -263,7 +263,7 @@ impl Chip8 {
         let y_pos = self.v[y as usize] as u16 % WINDOW_SIZE.1 as u16;
 
         for byte in 0..n as usize {
-            let mut pos = self.memory[self.i as usize + byte];
+            let pos = self.memory[self.i as usize + byte];
 
             for bit in 0..8 as usize {
                 if pos & (0x80 >> bit) != 0x0 {

@@ -25,6 +25,15 @@ fn main() -> ggez::GameResult<()> {
 impl ggez::event::EventHandler for Chip8 {
     fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
         self.emulate_cycle();
+        match_keys_pressed(ctx)
+            .iter()
+            .for_each(|key_option| match key_option {
+                Some(key) => {
+                    println!("Pressionou aqui");
+                    self.press_key(*key)
+                }
+                None => (),
+            });
         Ok(())
     }
 
@@ -51,4 +60,31 @@ impl ggez::event::EventHandler for Chip8 {
         }
         present(ctx)
     }
+}
+
+fn match_keys_pressed(ctx: &Context) -> Vec<Option<u8>> {
+    use ggez::event::KeyCode;
+
+    input::keyboard::pressed_keys(ctx)
+        .iter()
+        .map(|&key| match key {
+            KeyCode::Key1 => Some(0x1),
+            KeyCode::Key2 => Some(0x2),
+            KeyCode::Key3 => Some(0x3),
+            KeyCode::Key4 => Some(0xC),
+            KeyCode::Q => Some(0x4),
+            KeyCode::W => Some(0x5),
+            KeyCode::E => Some(0x6),
+            KeyCode::R => Some(0xD),
+            KeyCode::A => Some(0x7),
+            KeyCode::S => Some(0x8),
+            KeyCode::D => Some(0x9),
+            KeyCode::F => Some(0xE),
+            KeyCode::Z => Some(0xA),
+            KeyCode::X => Some(0x0),
+            KeyCode::C => Some(0xB),
+            KeyCode::V => Some(0xF),
+            _ => None,
+        })
+        .collect()
 }

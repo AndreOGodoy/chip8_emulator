@@ -571,4 +571,89 @@ mod tests {
         assert_eq!(chip8_debug.v[0x0003], 0x00E6);
         assert_eq!(chip8_debug.v[0x000F], 0);
     }
+
+    #[test]
+    fn test_key_press() {
+        let mut chip8_debug = Chip8::new();
+
+        let old_pc = chip8_debug.pc;
+        let mut new_pc;
+        new_pc = chip8_debug.skip_if_key_pressed(0x7);
+
+        assert_eq!(old_pc, new_pc - 2);
+
+        let old_pc = chip8_debug.pc;
+        new_pc = chip8_debug.skip_if_key_not_pressed(0x7);
+        assert_eq!(old_pc, new_pc - 4);
+        
+        let old_pc = chip8_debug.pc;
+        new_pc = chip8_debug.wait_for_key_press(0xA);
+        assert_eq!(old_pc, new_pc);
+
+        chip8_debug.key[0xA] = 1;
+        new_pc = chip8_debug.wait_for_key_press(0xA);
+        assert_eq!(old_pc, new_pc -2);
+    }
+
+    #[test]
+    fn test_timers() {
+        let mut chip8_debug = Chip8::new();
+
+        chip8_debug.v[0x0009] = 0x00A;
+
+        chip8_debug.set_delay_timer(0x0009);
+        assert_eq!(chip8_debug.delay_timer, 0x00A);
+        
+        chip8_debug.set_sound_timer(0x0009);
+        assert_eq!(chip8_debug.sound_timer, 0x000A);
+        
+        chip8_debug.emulate_cycle();
+        assert_eq!(chip8_debug.delay_timer, 0x0009);
+        assert_eq!(chip8_debug.sound_timer, 0x0009);
+        
+        for _ in 0..100 {
+            chip8_debug.emulate_cycle();
+        }
+        assert_eq!(chip8_debug.sound_timer, 0x0000);
+        assert_eq!(chip8_debug.delay_timer, 0x0000);
+    }
+
+    #[test]
+    fn test_index_operations() {
+        let mut chip8_debug = Chip8::new();
+
+        chip8_debug.v[0x0001] = 0x000A;
+        chip8_debug.index_add(0x0001);
+        assert_eq!(chip8_debug.i, 0x000A);
+    
+        (0..0x5).into_iter().for_each(|index| chip8_debug.v[index] = index as u8 + 4);
+
+        chip8_debug.store_registers(0x000E);
+
+        let i = chip8_debug.i as usize;
+
+        assert_eq!(chip8_debug.memory[i + 0x0], 4);
+        assert_eq!(chip8_debug.memory[i + 0x1], 5);
+        assert_eq!(chip8_debug.memory[i + 0x2], 6);
+        assert_eq!(chip8_debug.memory[i + 0x3], 7);
+        assert_eq!(chip8_debug.memory[i + 0x4], 8);
+        
+        chip8_debug.v.iter_mut().for_each(|byte| *byte = 0);
+        
+        chip8_debug.read_registers(0x5);
+
+        assert_eq!(chip8_debug.v[0x0], 4);
+        assert_eq!(chip8_debug.v[0x1], 5);
+        assert_eq!(chip8_debug.v[0x2], 6);
+        assert_eq!(chip8_debug.v[0x3], 7);
+        assert_eq!(chip8_debug.v[0x4], 8);
+    
+        chip8_debug = Chip8::default();
+        
+        chip8_debug.memory_store_bcd(255);
+
+        assert_eq!(chip8_debug.memory[chip8_debug.i as usize], 2);
+        assert_eq!(chip8_debug.memory[chip8_debug.i as usize + 1], 5);
+        assert_eq!(chip8_debug.memory[chip8_debug.i as usize + 2], 5);
+    }
 }

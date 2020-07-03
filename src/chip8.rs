@@ -145,8 +145,6 @@ impl Chip8 {
             }
             self.sound_timer -= 1;
         }
-            _ => (),
-    }
     }
 
     fn clear_screen(&mut self) -> usize {

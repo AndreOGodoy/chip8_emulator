@@ -25,7 +25,7 @@ pub struct Chip8 {
 
     pc: usize,
 
-    pub display: [u8; WINDOW_SIZE.0 * WINDOW_SIZE.1],
+    pub display: [u8; 2048],
 
     delay_timer: u8,
     sound_timer: u8,
@@ -72,6 +72,8 @@ impl Chip8 {
     }
 
     pub fn emulate_cycle(&mut self) {
+        self.draw_flag = false;
+
         self.opcode = self.fetch_opcode();
 
         let nibbles = (
@@ -91,7 +93,8 @@ impl Chip8 {
         println!("Opcode is: {:#0x}", self.opcode);
 
         self.pc = match (f, x, y, n) {
-            (0x0, _, _, 0x0) => self.clear_screen(),
+            (0x0, _, 0x0, 0x0) => self.pc,
+            (0x0, _, 0xE, 0x0) => self.clear_screen(),
             (0x0, _, _, 0xE) => self.return_from_subroutine(),
             (0x1, _, _, _) => self.jump_to_address(nnn),
             (0x2, _, _, _) => self.call_address(nnn),
@@ -114,7 +117,7 @@ impl Chip8 {
             (0x9, _, _, 0x0) => {
                 self.skip_if_diff(self.v[x as usize] as u16, self.v[y as usize] as u16)
             }
-            (0xA, _, _, _) => self.insert_on_register(self.i, nnn),
+            (0xA, _, _, _) => self.set_index_register(nnn),
             (0xB, _, _, _) => self.jump_to_address(nnn + self.v[0x000] as u16),
             (0xC, _, _, _) => self.register_random_end(x, kk),
             (0xD, _, _, _) => self.draw_sprite(x, y, n),
@@ -189,6 +192,11 @@ impl Chip8 {
         self.pc + 2
     }
 
+    fn set_index_register(&mut self, address: u16) -> usize {
+        self.i = address;
+        self.pc + 2
+    }
+
     fn add_to_register(&mut self, x: u16, kk: u16) -> usize {
         self.v[x as usize] = (self.v[x as usize] as u16 + kk as u16) as u8;
         self.pc + 2
@@ -250,17 +258,21 @@ impl Chip8 {
 
     fn draw_sprite(&mut self, x: u16, y: u16, n: u16) -> usize {
         self.v[0xF] = 0;
+
+        let xPos = self.v[x as usize] as u16 % WINDOW_SIZE.0 as u16;
+        let yPos = self.v[y as usize] as u16 % WINDOW_SIZE.1 as u16;
+
         for byte in 0..n as usize {
-            let pos = self.memory[self.i as usize + byte];
+            let mut pos = self.memory[self.i as usize + byte];
+
             for bit in 0..8 as usize {
                 if pos & (0x80 >> bit) != 0x0 {
-                    let pixel = (self.v[x as usize] as u16
-                        + bit as u16
-                        + (self.v[y as usize] as u16 + byte as u16)
-                        << 6)
-                        % 2028;
-                    self.v[0xF] |= self.display[pixel as usize] & 1;
-                    self.display[pixel as usize] ^= self.display[pixel as usize];
+                    let pixel =
+                        &mut self.display[(xPos + bit as u16 + (yPos + byte as u16) * WINDOW_SIZE.0 as u16) as usize];
+                    if *pixel == 0x00FF {
+                        self.v[0xF] = 1;
+                    }
+                    *pixel ^= 0x1;
                 }
             }
         }
@@ -336,6 +348,10 @@ impl Chip8 {
 
     fn fetch_opcode(&mut self) -> u16 {
         (self.memory[self.pc as usize] as u16) << 8 | self.memory[self.pc as usize + 1] as u16
+    }
+
+    pub fn press_key(&mut self, key: u8) {
+        self.key[key as usize] = 1;
     }
 }
 
@@ -583,14 +599,14 @@ mod tests {
         let old_pc = chip8_debug.pc;
         new_pc = chip8_debug.skip_if_key_not_pressed(0x7);
         assert_eq!(old_pc, new_pc - 4);
-        
+
         let old_pc = chip8_debug.pc;
         new_pc = chip8_debug.wait_for_key_press(0xA);
         assert_eq!(old_pc, new_pc);
 
         chip8_debug.key[0xA] = 1;
         new_pc = chip8_debug.wait_for_key_press(0xA);
-        assert_eq!(old_pc, new_pc -2);
+        assert_eq!(old_pc, new_pc - 2);
     }
 
     #[test]
@@ -601,14 +617,14 @@ mod tests {
 
         chip8_debug.set_delay_timer(0x0009);
         assert_eq!(chip8_debug.delay_timer, 0x00A);
-        
+
         chip8_debug.set_sound_timer(0x0009);
         assert_eq!(chip8_debug.sound_timer, 0x000A);
-        
+
         chip8_debug.emulate_cycle();
         assert_eq!(chip8_debug.delay_timer, 0x0009);
         assert_eq!(chip8_debug.sound_timer, 0x0009);
-        
+
         for _ in 0..100 {
             chip8_debug.emulate_cycle();
         }
@@ -623,8 +639,10 @@ mod tests {
         chip8_debug.v[0x0001] = 0x000A;
         chip8_debug.index_add(0x0001);
         assert_eq!(chip8_debug.i, 0x000A);
-    
-        (0..0x5).into_iter().for_each(|index| chip8_debug.v[index] = index as u8 + 4);
+
+        (0..0x5)
+            .into_iter()
+            .for_each(|index| chip8_debug.v[index] = index as u8 + 4);
 
         chip8_debug.store_registers(0x000E);
 
@@ -635,9 +653,9 @@ mod tests {
         assert_eq!(chip8_debug.memory[i + 0x2], 6);
         assert_eq!(chip8_debug.memory[i + 0x3], 7);
         assert_eq!(chip8_debug.memory[i + 0x4], 8);
-        
+
         chip8_debug.v.iter_mut().for_each(|byte| *byte = 0);
-        
+
         chip8_debug.read_registers(0x5);
 
         assert_eq!(chip8_debug.v[0x0], 4);
@@ -645,13 +663,22 @@ mod tests {
         assert_eq!(chip8_debug.v[0x2], 6);
         assert_eq!(chip8_debug.v[0x3], 7);
         assert_eq!(chip8_debug.v[0x4], 8);
-    
+
         chip8_debug = Chip8::default();
-        
+
         chip8_debug.memory_store_bcd(255);
 
         assert_eq!(chip8_debug.memory[chip8_debug.i as usize], 2);
         assert_eq!(chip8_debug.memory[chip8_debug.i as usize + 1], 5);
         assert_eq!(chip8_debug.memory[chip8_debug.i as usize + 2], 5);
     }
+
+    //#[test] {
+    //    fn test_draw() {
+    //        let mut chip8_debug = Chip8::new();
+//
+    //        chip8_debug.jump_to_address(0x0200);
+    //        chip8_debug.i
+    //    }
+    //}
 }

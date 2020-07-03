@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .map(|bw_pixel| match bw_pixel {
                 1 => 0x00FFFFFF,
                 0 => 0x00000000,
-                _ => 0x00222222,
+                _ => panic!("Display pixels must be 0 or 1"),
             })
             .collect();
 

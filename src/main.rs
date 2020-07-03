@@ -58,6 +58,7 @@ impl ggez::event::EventHandler for Chip8 {
                 }
             }
         }
+        self.draw_flag = false;
         present(ctx)
     }
 }

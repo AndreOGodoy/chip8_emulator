@@ -135,16 +135,18 @@ impl Chip8 {
             }
         };
 
-        match (self.delay_timer, self.sound_timer) {
-            (a, _) if a > 0 => self.delay_timer -= 1,
-            (_, b) if b > 0 => {
-                if b == 1 {
-                    println!("BEEP!");
-                }
-                self.sound_timer -= 1;
-            }
-            _ => (),
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
         }
+
+        if self.sound_timer > 0 {
+            if self.sound_timer == 1 {
+                println!("BEEP");
+            }
+            self.sound_timer -= 1;
+        }
+            _ => (),
+    }
     }
 
     fn clear_screen(&mut self) -> usize {

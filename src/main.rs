@@ -23,7 +23,7 @@ fn main() -> ggez::GameResult<()> {
 }
 
 impl ggez::event::EventHandler for Chip8 {
-    fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
+    fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         self.emulate_cycle();
         match_keys_pressed(ctx)
             .iter()

@@ -259,16 +259,18 @@ impl Chip8 {
     fn draw_sprite(&mut self, x: u16, y: u16, n: u16) -> usize {
         self.v[0xF] = 0;
 
-        let xPos = self.v[x as usize] as u16 % WINDOW_SIZE.0 as u16;
-        let yPos = self.v[y as usize] as u16 % WINDOW_SIZE.1 as u16;
+        let x_pos = self.v[x as usize] as u16 % WINDOW_SIZE.0 as u16;
+        let y_pos = self.v[y as usize] as u16 % WINDOW_SIZE.1 as u16;
 
         for byte in 0..n as usize {
             let mut pos = self.memory[self.i as usize + byte];
 
             for bit in 0..8 as usize {
                 if pos & (0x80 >> bit) != 0x0 {
-                    let pixel =
-                        &mut self.display[(xPos + bit as u16 + (yPos + byte as u16) * WINDOW_SIZE.0 as u16) as usize];
+                    let pixel = &mut self.display[(x_pos
+                        + bit as u16
+                        + (y_pos + byte as u16) * WINDOW_SIZE.0 as u16)
+                        as usize];
                     if *pixel == 0x00FF {
                         self.v[0xF] = 1;
                     }

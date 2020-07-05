@@ -1,91 +1,199 @@
 mod chip8;
 use chip8::Chip8;
 
+use sdl2;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::pixels::Color;
+use sdl2::rect::Rect;
+
 use std::error::Error;
-use std::path;
+use std::thread::sleep;
 
-use ggez::graphics::*;
-use ggez::*;
-
-fn main() -> ggez::GameResult<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut chip8 = Chip8::new();
+    chip8.load_program("roms/pong.rom")?;
 
-    let path = path::Path::new("./roms/test_opcode.rom");
-    chip8.load_program(path).expect("Fail do load program");
+    let sdl_context = sdl2::init()?;
+    let video_subsystem = sdl_context.video()?;
 
-    let cb = ContextBuilder::new("Chip8", "Andre")
-        .window_setup(ggez::conf::WindowSetup::default().title("Chip8"))
-        .window_mode(ggez::conf::WindowMode::default().dimensions(640.0, 320.0));
+    let window = video_subsystem
+        .window("Chip8 - Emulator", 640, 320)
+        .position_centered()
+        .build()?;
 
-    let (ctx, event_loop) = &mut cb.build()?;
+    let mut canvas = window.into_canvas().present_vsync().build()?;
+    println!("Using SDL renderer: {}", canvas.info().name);
+    canvas.set_draw_color(Color::RGB(255, 255, 255));
+    canvas.clear();
+    canvas.present();
 
-    event::run(ctx, event_loop, &mut chip8)
-}
+    let mut event_pump = sdl_context.event_pump()?;
 
-impl ggez::event::EventHandler for Chip8 {
-    fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        self.emulate_cycle();
-        match_keys_pressed(ctx)
-            .iter()
-            .for_each(|key_option| match key_option {
-                Some(key) => {
-                    println!("Pressionou aqui");
-                    self.press_key(*key)
-                }
-                None => (),
+    'running: loop {
+        chip8.emulate_cycle();
+        canvas.clear();
+
+        if chip8.draw_flag {
+            chip8.display.iter().enumerate().for_each(|(index, &byte)| {
+                let color = match byte {
+                    1 => Color::RGB(255, 255, 255),
+                    0 => Color::RGB(0, 0, 0),
+                    _ => panic!("Unknown byte value on display"),
+                };
+                canvas.set_draw_color(color);
+                canvas
+                    .fill_rect(Rect::new(
+                        (index as i32 % 64) * 10,
+                        (index as i32 / 64) * 10,
+                        10,
+                        10,
+                    ))
+                    .expect("Fail drawing");
             });
-        Ok(())
-    }
+        }
 
-    fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        if self.draw_flag == true {
-            let mut index = 0;
-            for j in 0..32 {
-                for i in 0..64 {
-                    let rect = Rect::new(i as f32 * 10.0, j as f32 * 10.0, 10.0, 10.0);
-                    let color = match self.display[index] {
-                        0 => BLACK,
-                        1 => WHITE,
-                        _ => panic!("Deu pau na cor"),
-                    };
-
-                    Mesh::new_rectangle(ctx, DrawMode::Fill(FillOptions::default()), rect, color)
-                        .expect("Deu pau na mesh")
-                        .draw(ctx, DrawParam::default())
-                        .expect("Deu pau no draw");
-
-                    index += 1;
-                }
+        canvas.present();
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::KeyUp {
+                    keycode: Some(Keycode::Num1),
+                    ..
+                } => chip8.release_key(1),
+                Event::KeyUp {
+                    keycode: Some(Keycode::Num2),
+                    ..
+                } => chip8.release_key(2),
+                Event::KeyUp {
+                    keycode: Some(Keycode::Num3),
+                    ..
+                } => chip8.release_key(3),
+                Event::KeyUp {
+                    keycode: Some(Keycode::Num4),
+                    ..
+                } => chip8.release_key(0xC),
+                Event::KeyUp {
+                    keycode: Some(Keycode::Q),
+                    ..
+                } => chip8.release_key(4),
+                Event::KeyUp {
+                    keycode: Some(Keycode::W),
+                    ..
+                } => chip8.release_key(5),
+                Event::KeyUp {
+                    keycode: Some(Keycode::E),
+                    ..
+                } => chip8.release_key(6),
+                Event::KeyUp {
+                    keycode: Some(Keycode::R),
+                    ..
+                } => chip8.release_key(0xD),
+                Event::KeyUp {
+                    keycode: Some(Keycode::A),
+                    ..
+                } => chip8.release_key(7),
+                Event::KeyUp {
+                    keycode: Some(Keycode::S),
+                    ..
+                } => chip8.release_key(8),
+                Event::KeyUp {
+                    keycode: Some(Keycode::D),
+                    ..
+                } => chip8.release_key(9),
+                Event::KeyUp {
+                    keycode: Some(Keycode::F),
+                    ..
+                } => chip8.release_key(0xE),
+                Event::KeyUp {
+                    keycode: Some(Keycode::Z),
+                    ..
+                } => chip8.release_key(0xA),
+                Event::KeyUp {
+                    keycode: Some(Keycode::X),
+                    ..
+                } => chip8.release_key(0),
+                Event::KeyUp {
+                    keycode: Some(Keycode::C),
+                    ..
+                } => chip8.release_key(0xB),
+                Event::KeyUp {
+                    keycode: Some(Keycode::V),
+                    ..
+                } => chip8.release_key(0xF),
+                Event::KeyDown {
+                    keycode: Some(Keycode::Num1),
+                    ..
+                } => chip8.press_key(1),
+                Event::KeyDown {
+                    keycode: Some(Keycode::Num2),
+                    ..
+                } => chip8.press_key(2),
+                Event::KeyDown {
+                    keycode: Some(Keycode::Num3),
+                    ..
+                } => chip8.press_key(3),
+                Event::KeyDown {
+                    keycode: Some(Keycode::Num4),
+                    ..
+                } => chip8.press_key(0xC),
+                Event::KeyDown {
+                    keycode: Some(Keycode::Q),
+                    ..
+                } => chip8.press_key(4),
+                Event::KeyDown {
+                    keycode: Some(Keycode::W),
+                    ..
+                } => chip8.press_key(5),
+                Event::KeyDown {
+                    keycode: Some(Keycode::E),
+                    ..
+                } => chip8.press_key(6),
+                Event::KeyDown {
+                    keycode: Some(Keycode::R),
+                    ..
+                } => chip8.press_key(0xD),
+                Event::KeyDown {
+                    keycode: Some(Keycode::A),
+                    ..
+                } => chip8.press_key(7),
+                Event::KeyDown {
+                    keycode: Some(Keycode::S),
+                    ..
+                } => chip8.press_key(8),
+                Event::KeyDown {
+                    keycode: Some(Keycode::D),
+                    ..
+                } => chip8.press_key(9),
+                Event::KeyDown {
+                    keycode: Some(Keycode::F),
+                    ..
+                } => chip8.press_key(0xE),
+                Event::KeyDown {
+                    keycode: Some(Keycode::Z),
+                    ..
+                } => chip8.press_key(0xA),
+                Event::KeyDown {
+                    keycode: Some(Keycode::X),
+                    ..
+                } => chip8.press_key(0),
+                Event::KeyDown {
+                    keycode: Some(Keycode::C),
+                    ..
+                } => chip8.press_key(0xB),
+                Event::KeyDown {
+                    keycode: Some(Keycode::V),
+                    ..
+                } => chip8.press_key(0xF),
+                Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => break 'running,
+                Event::Quit { .. } => break 'running,
+                _ => (),
             }
         }
-        self.draw_flag = false;
-        present(ctx)
+        //chip8.clear_keys();
+        //std::thread::sleep(std::time::Duration::from_millis(100));
     }
-}
-
-fn match_keys_pressed(ctx: &Context) -> Vec<Option<u8>> {
-    use ggez::event::KeyCode;
-
-    input::keyboard::pressed_keys(ctx)
-        .iter()
-        .map(|&key| match key {
-            KeyCode::Key1 => Some(0x1),
-            KeyCode::Key2 => Some(0x2),
-            KeyCode::Key3 => Some(0x3),
-            KeyCode::Key4 => Some(0xC),
-            KeyCode::Q => Some(0x4),
-            KeyCode::W => Some(0x5),
-            KeyCode::E => Some(0x6),
-            KeyCode::R => Some(0xD),
-            KeyCode::A => Some(0x7),
-            KeyCode::S => Some(0x8),
-            KeyCode::D => Some(0x9),
-            KeyCode::F => Some(0xE),
-            KeyCode::Z => Some(0xA),
-            KeyCode::X => Some(0x0),
-            KeyCode::C => Some(0xB),
-            KeyCode::V => Some(0xF),
-            _ => None,
-        })
-        .collect()
+    Ok(())
 }

@@ -2,17 +2,41 @@ mod chip8;
 use chip8::Chip8;
 
 use sdl2;
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
+use sdl2::event::*;
+use sdl2::keyboard::*;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
 use std::error::Error;
 use std::thread::sleep;
 
+use std::collections::HashMap;
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut chip8 = Chip8::new();
     chip8.load_program("roms/pong.rom")?;
+
+    let key_map: HashMap<Keycode, u8> = [
+        (Keycode::Num1, 1),
+        (Keycode::Num2, 2),
+        (Keycode::Num3, 3),
+        (Keycode::Num4, 0xC),
+        (Keycode::Q, 0x4),
+        (Keycode::W, 0x5),
+        (Keycode::E, 0x6),
+        (Keycode::R, 0xD),
+        (Keycode::A, 0x7),
+        (Keycode::S, 0x8),
+        (Keycode::D, 0x9),
+        (Keycode::F, 0xE),
+        (Keycode::Z, 0xA),
+        (Keycode::X, 0x0),
+        (Keycode::C, 0xB),
+        (Keycode::V, 0xF),
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
@@ -192,8 +216,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                 _ => (),
             }
         }
-        //chip8.clear_keys();
-        //std::thread::sleep(std::time::Duration::from_millis(100));
+
+        event_pump
+            .keyboard_state()
+            .scancodes()
+            .for_each(|(scancode, is_pressed)| {
+                if let Some(keycode) = Keycode::from_scancode(scancode) {
+                    if key_map.contains_key(&keycode) {
+                        let key_as_u8 = key_map[&keycode];
+
+                        if is_pressed {
+                            chip8.press_key(key_as_u8)
+                        } else {
+                            chip8.release_key(key_as_u8)
+                        }
+                    }
+                }
+            });
     }
     Ok(())
 }

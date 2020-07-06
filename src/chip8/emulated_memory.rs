@@ -40,9 +40,9 @@ impl EmulatedMemory {
         }
     }
 
-    /// Set `index` to nnn
+    /// Set index to nnn
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn set_index(&mut self, nnn: usize) -> ExecutionState {
         self.index = nnn;
 
@@ -51,7 +51,7 @@ impl EmulatedMemory {
 
     /// Stores the current address at the stack and points one position above it
     ///
-    /// Returns `ExecutionState::JumpTo(nnn)`
+    /// Returns ExecutionState::JumpTo(nnn)
     pub fn call_subroutine(&mut self, nnn: usize, pc: usize) -> ExecutionState {
         self.stack[self.stack_pointer] = pc.try_into().expect("Fail to convert pc to u8");
         self.stack_pointer += 1;
@@ -61,7 +61,7 @@ impl EmulatedMemory {
 
     /// Decrements the stack pointer, acessing the previous address stored in it
     ///
-    /// Returns `ExecutionState::ReturnTo(pc)`
+    /// Returns ExecutionState::ReturnTo(pc)
     pub fn return_from_subroutine(&mut self) -> ExecutionState {
         self.stack_pointer -= 1;
         let pc = self.stack[self.stack_pointer];
@@ -69,23 +69,23 @@ impl EmulatedMemory {
         ExecutionState::ReturnTo(pc as usize)
     }
 
-    /// Returns `ExecutionState::JumpTo(nnn)`
+    /// Returns ExecutionState::JumpTo(nnn)
     pub fn jump_to_address(&mut self, nnn: usize) -> ExecutionState {
         ExecutionState::JumpTo(nnn)
     }
 
-    /// Adds `vx` to `index`
+    /// Adds vx to index
     ///
     /// The result is computated modulo u16
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn index_add(&mut self, vx: u8) -> ExecutionState {
         self.index = (self.index as u16).wrapping_add(vx as u16) as usize; // Avoids invalid index values
 
         ExecutionState::Continue
     }
 
-    /// Breaks `x` into Hundreds / Tens / Units
+    /// Breaks x into Hundreds / Tens / Units
     ///
     /// Stores at positions I, I+1, I+2 of the memory respectively
     pub fn memory_store_bcd(&mut self, x: u8) -> ExecutionState {

@@ -43,7 +43,11 @@ impl EmulatedKeypad {
             );
         }
         let key = key as usize;
-        if self.keypad[key] == 1 { ExecutionState::Skip } else { ExecutionState::Continue }
+        if self.keypad[key] == 1 {
+            ExecutionState::Skip
+        } else {
+            ExecutionState::Continue
+        }
     }
 
     pub fn skip_if_released(&self, key: u8) -> ExecutionState {
@@ -54,7 +58,11 @@ impl EmulatedKeypad {
             );
         }
         let key = key as usize;
-        if self.keypad[key] == 0 { ExecutionState::Skip } else { ExecutionState::Continue }
+        if self.keypad[key] == 0 {
+            ExecutionState::Skip
+        } else {
+            ExecutionState::Continue
+        }
     }
 
     pub fn wait_for_key(&self, vx: &mut u8) -> ExecutionState {
@@ -73,7 +81,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_keypad_initialization() {
-        let mut keypad = EmulatedKeypad::new();
+        let keypad = EmulatedKeypad::new();
 
         assert_eq!(keypad, EmulatedKeypad { keypad: [0; 16] });
     }

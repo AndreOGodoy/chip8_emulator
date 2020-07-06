@@ -4,7 +4,7 @@ use super::ExecutionState;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct EmulatedCpu {
-    ///Emulates 16 8-bit register. ``register[0xF]`` should only be used internally as flag
+    ///Emulates 16 8-bit register. register[0xF] should only be used internally as flag
     pub register: [u8; 16],
 }
 
@@ -14,64 +14,64 @@ impl EmulatedCpu {
         Default::default()
     }
 
-    /// Inserts value `kk` into register `x`.    
+    /// Inserts value kk into register x.    
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn set_register(&mut self, x: u8, kk: u8) -> ExecutionState {
         self.register[x as usize] = kk;
 
         ExecutionState::Continue
     }
 
-    /// Adds value `kk` into register `x`.  
+    /// Adds value kk into register x.  
     ///  
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_add_value(&mut self, x: u8, kk: u8) -> ExecutionState {
         self.register[x as usize] = self.register[x as usize].wrapping_add(kk);
 
         ExecutionState::Continue
     }
 
-    /// ORs `register[x]` and `register[y]`.
+    /// ORs register[x] and register[y].
     ///
-    /// Result stored on `register[x]`.
+    /// Result stored on register[x].
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_or(&mut self, x: u8, y: u8) -> ExecutionState {
         self.register[x as usize] |= self.register[y as usize];
 
         ExecutionState::Continue
     }
 
-    /// ANDs `register[x]` and `register[y]`.
+    /// ANDs register[x] and register[y].
     ///
-    /// Result stored on `register[x]`.
+    /// Result stored on register[x].
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_and(&mut self, x: u8, y: u8) -> ExecutionState {
         self.register[x as usize] &= self.register[y as usize];
 
         ExecutionState::Continue
     }
 
-    /// XORs `register[x]` and `register[y]`.
+    /// XORs register[x] and register[y].
     ///
-    /// Result stored on `register[x]`.
+    /// Result stored on register[x].
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_xor(&mut self, x: u8, y: u8) -> ExecutionState {
         self.register[x as usize] ^= self.register[y as usize];
 
         ExecutionState::Continue
     }
 
-    /// Adds `register[x]` and `register[y]`.  
+    /// Adds register[x] and register[y].  
     ///  
-    /// `register[15]` is set if result > 255
+    /// register[15] is set if result > 255
     ///
-    /// Result stored on `register[x]`
+    /// Result stored on register[x]
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_carry_add(&mut self, x: u8, y: u8) -> ExecutionState {
         let sum = self.register[x as usize] as u16 + self.register[y as usize] as u16;
         self.register[0xF] = (sum > 0xFF) as u8;
@@ -80,13 +80,13 @@ impl EmulatedCpu {
         ExecutionState::Continue
     }
 
-    /// Subs `register[x]` and `register[y]`.  
+    /// Subs register[x] and register[y].  
     ///  
-    /// `register[15]` is unset if `register[x]` < `register[y]`
+    /// register[15] is unset if register[x] < register[y]
     ///
-    /// Result stored on `register[x]`
+    /// Result stored on register[x]
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_borrow_sub(&mut self, x: u8, y: u8) -> ExecutionState {
         self.register[x as usize] =
             self.register[x as usize].wrapping_sub(self.register[y as usize]);
@@ -100,13 +100,13 @@ impl EmulatedCpu {
         ExecutionState::Continue
     }
 
-    /// Subs `register[x]` and `register[y]`.  
+    /// Subs register[x] and register[y].  
     ///  
-    /// `register[15]` is unset if `register[x]` < `register[y]`
+    /// register[15] is unset if register[x] < register[y]
     ///
-    /// Result stored on `register[y]`
+    /// Result stored on register[y]
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_borrow_sub_rev(&mut self, x: u8, y: u8) -> ExecutionState {
         self.register[x as usize] =
             self.register[y as usize].wrapping_sub(self.register[x as usize]);
@@ -115,11 +115,11 @@ impl EmulatedCpu {
         ExecutionState::Continue
     }
 
-    /// Shifts `register[x]` bits 1pos to the right
+    /// Shifts register[x] bits 1pos to the right
     ///
-    /// If the least significant bit is `1`, `register[0xF]` is set
+    /// If the least significant bit is 1, register[0xF] is set
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_shr(&mut self, x: u8) -> ExecutionState {
         self.register[0xF] = self.register[x as usize] & 0b00000001;
         self.register[x as usize] >>= 1;
@@ -127,11 +127,11 @@ impl EmulatedCpu {
         ExecutionState::Continue
     }
 
-    /// Shifts `register[x]` bits 1pos to the left
+    /// Shifts register[x] bits 1pos to the left
     ///
-    /// If the most significant bit is `1`, `register[0xF]` is set
+    /// If the most significant bit is 1, register[0xF] is set
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_shl(&mut self, x: u8) -> ExecutionState {
         self.register[0xF] = (self.register[x as usize] & 0b10000000) >> 7;
         self.register[x as usize] <<= 1;
@@ -139,11 +139,11 @@ impl EmulatedCpu {
         ExecutionState::Continue
     }
 
-    /// ANDs `kk` and random u8 value.
+    /// ANDs kk and random u8 value.
     ///
-    /// Result stored on `register[x]`.
+    /// Result stored on register[x].
     ///
-    /// Returns `ExecutionState::Continue`
+    /// Returns ExecutionState::Continue
     pub fn register_random_and(&mut self, x: u8, kk: u8) -> ExecutionState {
         use rand::Rng;
 

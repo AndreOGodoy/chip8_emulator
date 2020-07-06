@@ -57,8 +57,10 @@ impl EmulatedKeypad {
         if self.keypad[key] == 0 { ExecutionState::Skip } else { ExecutionState::Continue }
     }
 
-    pub fn wait_for_key(&self, key: u8) -> ExecutionState {
-        if self.keypad.iter().any(|&key| key == 1) {
+    pub fn wait_for_key(&self, vx: &mut u8) -> ExecutionState {
+        if let Some((index, _)) = self.keypad.iter().enumerate().find(|(_, key)| **key == 1) {
+            *vx = index as u8;
+
             ExecutionState::Continue
         } else {
             ExecutionState::Hold

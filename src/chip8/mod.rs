@@ -228,7 +228,7 @@ impl Chip8 {
             (0xE, _, _, 0xE) => self.keypad.skip_if_pressed(vx),
             (0xE, _, _, 0x1) => self.keypad.skip_if_released(vx),
             (0xF, _, _, 0x7) => self.cpu.set_register(x, self.delay_timer),
-            (0xF, _, _, 0xA) => self.keypad.wait_for_key(vx),
+            (0xF, _, _, 0xA) => self.keypad.wait_for_key(&mut self.cpu.register[x as usize]),
             (0xF, _, 0x1, 0x5) => self.set_delay_timer(x),
             (0xF, _, _, 0x8) => self.set_sound_timer(x),
             (0xF, _, _, 0xE) => self.memory.index_add(x),

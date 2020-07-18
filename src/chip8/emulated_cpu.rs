@@ -88,14 +88,9 @@ impl EmulatedCpu {
     ///
     /// Returns ExecutionState::Continue
     pub fn register_borrow_sub(&mut self, x: u8, y: u8) -> ExecutionState {
+        self.register[0xF] = (self.register[x as usize] > self.register[y as usize]) as u8;
         self.register[x as usize] =
             self.register[x as usize].wrapping_sub(self.register[y as usize]);
-        self.register[0xF] = if self.register[x as usize] as u16 > self.register[y as usize] as u16
-        {
-            1
-        } else {
-            0
-        };
 
         ExecutionState::Continue
     }
@@ -108,9 +103,9 @@ impl EmulatedCpu {
     ///
     /// Returns ExecutionState::Continue
     pub fn register_borrow_sub_rev(&mut self, x: u8, y: u8) -> ExecutionState {
+        self.register[0xF] = (self.register[y as usize] > self.register[x as usize]) as u8;
         self.register[x as usize] =
             self.register[y as usize].wrapping_sub(self.register[x as usize]);
-        self.register[0xF] = (self.register[y as usize] > self.register[x as usize]) as u8;
 
         ExecutionState::Continue
     }
@@ -209,7 +204,7 @@ mod tests {
         cpu.set_register(0x6, 10);
         cpu.register_borrow_sub(0x5, 0x6);
         assert_eq!(cpu.register[0x5], 10);
-        //assert_eq!(cpu.register[0xF], 1); //TODO: FIX THIS
+        assert_eq!(cpu.register[0xF], 1); //TODO: FIX THIS
 
         cpu.set_register(0x5, 20);
         cpu.set_register(0x6, 10);

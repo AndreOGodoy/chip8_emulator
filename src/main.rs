@@ -54,22 +54,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         canvas.clear();
 
         if chip8.draw_flag {
-            chip8.display.iter().enumerate().for_each(|(index, &byte)| {
-                let color = match byte {
-                    1 => Color::RGB(255, 255, 255),
-                    0 => Color::RGB(0, 0, 0),
-                    _ => panic!("Unknown byte value on display"),
-                };
-                canvas.set_draw_color(color);
-                canvas
-                    .fill_rect(Rect::new(
-                        (index as i32 % 64) * 10,
-                        (index as i32 / 64) * 10,
-                        10,
-                        10,
-                    ))
-                    .expect("Fail drawing");
-            });
+            chip8
+                .graphics
+                .display
+                .iter()
+                .enumerate()
+                .for_each(|(index, &byte)| {
+                    let color = match byte {
+                        1 => Color::RGB(255, 255, 255),
+                        0 => Color::RGB(0, 0, 0),
+                        _ => panic!("Unknown byte value on display"),
+                    };
+                    canvas.set_draw_color(color);
+                    canvas
+                        .fill_rect(Rect::new(
+                            (index as i32 % 64) * 10,
+                            (index as i32 / 64) * 10,
+                            10,
+                            10,
+                        ))
+                        .expect("Fail drawing");
+                });
         }
 
         canvas.present();

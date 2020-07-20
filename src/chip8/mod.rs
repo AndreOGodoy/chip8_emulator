@@ -11,8 +11,10 @@ use emulated_memory::EmulatedMemory;
 mod emulated_keypad;
 use emulated_keypad::EmulatedKeypad;
 
+mod emulated_graphics;
+use emulated_graphics::EmulatedGraphics;
+
 const PROGRAM_START: usize = 0x200;
-const WINDOW_SIZE: (usize, usize) = (64, 32);
 
 pub enum ExecutionState {
     Hold,
@@ -26,8 +28,7 @@ pub struct Chip8 {
     memory: EmulatedMemory,
     cpu: EmulatedCpu,
     keypad: EmulatedKeypad,
-
-    pub display: [u8; 2048],
+    pub graphics: EmulatedGraphics,
     pub draw_flag: bool,
 
     pc: usize,
@@ -46,10 +47,10 @@ impl Chip8 {
             memory: EmulatedMemory::new(),
             delay_timer: 0,
             sound_timer: 0,
-            display: [0; 64 * 32],
             draw_flag: false,
             cpu: EmulatedCpu::new(),
             keypad: EmulatedKeypad::new(),
+            graphics: EmulatedGraphics::new(),
         }
     }
 
@@ -90,13 +91,6 @@ impl Chip8 {
         }
     }
 
-    fn clear_screen(&mut self) -> ExecutionState {
-        self.display.iter_mut().for_each(|byte| *byte = 0);
-        self.draw_flag = true;
-
-        ExecutionState::Continue
-    }
-
     fn skip_if_equal<T: PartialEq>(&mut self, a: T, b: T) -> ExecutionState {
         if a == b {
             ExecutionState::Skip
@@ -113,28 +107,10 @@ impl Chip8 {
         }
     }
 
-    fn draw_sprite(&mut self, x: u8, y: u8, n: u8) -> ExecutionState {
-        self.cpu.register[0xF] = 0;
+    fn draw(&mut self, vx: u8, vy: u8, n: u8) -> ExecutionState {
+        let sprite = &self.memory.mem_array[self.memory.index..self.memory.index + n as usize];
+        self.cpu.register[0xF] = self.graphics.draw_sprite(vx, vy, n, sprite) as u8;
 
-        let x_pos = self.cpu.register[x as usize] as u16 % WINDOW_SIZE.0 as u16;
-        let y_pos = self.cpu.register[y as usize] as u16 % WINDOW_SIZE.1 as u16;
-
-        for byte in 0..n as usize {
-            let pos = self.memory.mem_array[self.memory.index as usize + byte];
-
-            for bit in 0..8 as usize {
-                if pos & (0x80 >> bit) != 0x0 {
-                    let pixel = &mut self.display[(x_pos
-                        + bit as u16
-                        + (y_pos + byte as u16) * WINDOW_SIZE.0 as u16)
-                        as usize];
-                    if *pixel == 0x00FF {
-                        self.cpu.register[0xF] = 1;
-                    }
-                    *pixel ^= 0x1;
-                }
-            }
-        }
         self.draw_flag = true;
 
         ExecutionState::Continue
@@ -187,7 +163,7 @@ impl Chip8 {
         self.keypad.release_key(key);
     }
 
-    pub fn execute_opcode(&mut self, opcode: u16) -> ExecutionState {
+    fn execute_opcode(&mut self, opcode: u16) -> ExecutionState {
         let f = ((opcode & 0xF000) >> 12) as u8;
         let x = ((opcode & 0x0F00) >> 8) as u8;
         let y = ((opcode & 0x00F0) >> 4) as u8;
@@ -200,7 +176,7 @@ impl Chip8 {
 
         match (f, x, y, n) {
             (0x0, 0x0, 0xE, 0xE) => self.memory.return_from_subroutine(),
-            (0x0, _, 0xE, 0x0) => self.clear_screen(),
+            (0x0, _, 0xE, 0x0) => self.graphics.clear_display(),
             (0x0, _, _, _) => ExecutionState::Continue,
             (0x1, _, _, _) => self.memory.jump_to_address(nnn),
             (0x2, _, _, _) => self.memory.call_subroutine(nnn, self.pc),
@@ -224,7 +200,7 @@ impl Chip8 {
                 .memory
                 .jump_to_address(nnn + self.cpu.register[0x0] as usize),
             (0xC, _, _, _) => self.cpu.register_random_and(x, kk),
-            (0xD, _, _, _) => self.draw_sprite(x, y, n),
+            (0xD, _, _, _) => self.draw(vx, vy, n),
             (0xE, _, _, 0xE) => self.keypad.skip_if_pressed(vx),
             (0xE, _, _, 0x1) => self.keypad.skip_if_released(vx),
             (0xF, _, _, 0x7) => self.cpu.set_register(x, self.delay_timer),

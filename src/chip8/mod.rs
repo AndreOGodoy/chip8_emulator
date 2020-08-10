@@ -14,6 +14,9 @@ use emulated_keypad::EmulatedKeypad;
 mod emulated_graphics;
 use emulated_graphics::EmulatedGraphics;
 
+mod emulated_timers;
+use emulated_timers::EmulatedTimers;
+
 const PROGRAM_START: usize = 0x200;
 
 pub enum ExecutionState {
@@ -28,12 +31,12 @@ pub struct Chip8 {
     memory: EmulatedMemory,
     cpu: EmulatedCpu,
     keypad: EmulatedKeypad,
+    timers: EmulatedTimers,
+    
     pub graphics: EmulatedGraphics,
     pub draw_flag: bool,
 
     pc: usize,
-    delay_timer: u8,
-    sound_timer: u8,
 }
 
 impl Chip8 {
@@ -45,8 +48,7 @@ impl Chip8 {
         Chip8 {
             pc: PROGRAM_START,
             memory: EmulatedMemory::new(),
-            delay_timer: 0,
-            sound_timer: 0,
+            timers: EmulatedTimers::new(),
             draw_flag: false,
             cpu: EmulatedCpu::new(),
             keypad: EmulatedKeypad::new(),
@@ -79,16 +81,7 @@ impl Chip8 {
             ExecutionState::ReturnTo(address) => address + 2,
         };
 
-        if self.delay_timer > 0 {
-            self.delay_timer -= 1;
-        }
-
-        if self.sound_timer > 0 {
-            if self.sound_timer == 1 {
-                println!("BEEP");
-            }
-            self.sound_timer -= 1;
-        }
+        self.timers.tick();
     }
 
     fn skip_if_equal<T: PartialEq>(&mut self, a: T, b: T) -> ExecutionState {
@@ -112,18 +105,6 @@ impl Chip8 {
         self.cpu.register[0xF] = self.graphics.draw_sprite(vx, vy, n, sprite) as u8;
 
         self.draw_flag = true;
-
-        ExecutionState::Continue
-    }
-
-    fn set_delay_timer(&mut self, x: u8) -> ExecutionState {
-        self.delay_timer = self.cpu.register[x as usize];
-
-        ExecutionState::Continue
-    }
-
-    fn set_sound_timer(&mut self, x: u8) -> ExecutionState {
-        self.sound_timer = self.cpu.register[x as usize];
 
         ExecutionState::Continue
     }
@@ -203,10 +184,10 @@ impl Chip8 {
             (0xD, _, _, _) => self.draw(vx, vy, n),
             (0xE, _, _, 0xE) => self.keypad.skip_if_pressed(vx),
             (0xE, _, _, 0x1) => self.keypad.skip_if_released(vx),
-            (0xF, _, _, 0x7) => self.cpu.set_register(x, self.delay_timer),
+            (0xF, _, _, 0x7) => self.cpu.set_register(x, self.timers.get_delay_timer()),
             (0xF, _, _, 0xA) => self.keypad.wait_for_key(&mut self.cpu.register[x as usize]),
-            (0xF, _, 0x1, 0x5) => self.set_delay_timer(x),
-            (0xF, _, _, 0x8) => self.set_sound_timer(x),
+            (0xF, _, 0x1, 0x5) => self.timers.set_delay_timer(vx),
+            (0xF, _, _, 0x8) => self.timers.set_sound_timer(vx),
             (0xF, _, _, 0xE) => self.memory.index_add(x),
             (0xF, _, _, 0x9) => self.set_index_sprite_location(vx),
             (0xF, _, _, 0x3) => self.memory.memory_store_bcd(vx),
